@@ -33,4 +33,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME dist/*Setup-x64.exe dist/SHA256SUMS.txt dist/update.json --verify-tag --title "VPN Pro Controller $env:GITHUB_REF_NAME" --generate-notes
+          gh release view $env:GITHUB_REF_NAME --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output 'Release already published; retaining its immutable installer/checksums.'
+          } else {
+            gh release create $env:GITHUB_REF_NAME dist/*Setup-x64.exe dist/SHA256SUMS.txt dist/update.json --verify-tag --title "VPN Pro Controller $env:GITHUB_REF_NAME" --generate-notes
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
