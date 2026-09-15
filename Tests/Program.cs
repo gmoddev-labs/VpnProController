@@ -1,0 +1,135 @@
+using System.Collections.Concurrent;
+using Google.Protobuf;
+using NetMQ;
+using NetMQ.Sockets;
+using VpnPro.Core;
+using VpnPro.Core.Wire;
+
+static void Check(bool Condition, string Description)
+{
+    if (!Condition) throw new Exception(Description);
+    Console.WriteLine($"[VPNPro:Test] PASS {Description}");
+}
+
+var Registration = Envelope.Parser.ParseFrom(Convert.FromHexString("82010a120808ace002101d1804"));
+Check(Registration.ClientConnect.Reply.EventPort == 45100 && Registration.ClientConnect.Reply.Version == 4, "captured registration reply");
+var Connect = new Envelope { Connect = new() { Request = new() { LocationId = "75" } } };
+Check(Convert.ToHexString(Connect.ToByteArray()).Equals("ba01060a040a023735", StringComparison.OrdinalIgnoreCase), "connect matches capture");
+Check(Convert.ToHexString(new Envelope { Disconnect = new() { Request = new() } }.ToByteArray()).Equals("c201020a00", StringComparison.OrdinalIgnoreCase), "disconnect matches capture");
+Check(Envelope.Parser.ParseFrom(Convert.FromHexString("ca01021200")).GetConnectionStatus.Reply.Status == 0, "omitted enum means Disconnected");
+Check(Envelope.Parser.ParseFrom(Convert.FromHexString("1a0412020802")).Event.ConnectionChanged.Status == 2, "connected event decodes");
+Check(Envelope.Parser.ParseFrom(Convert.FromHexString("a2010412021001")).GetStoredCredentialsStatus.Reply.Valid, "captured credential validity");
+var Last = Envelope.Parser.ParseFrom(Convert.FromHexString("da011312110a0f0a093139322e302e322e3112023735"));
+Check(Last.GetLastUsedConnectionData.Reply.Data.LocationId == "75", "captured Express last connection has direct Data, not Nord optional wrapper");
+
+await using (var Mock = new MockService())
+await using (var Service = new OperaVpnService(Port: await Mock.Port.Task, Timeout: TimeSpan.FromMilliseconds(600)))
+{
+    var Snapshot = await Service.RefreshAsync();
+    Check(Snapshot.ServiceAvailable && Snapshot.CredentialsValid && Snapshot.Locations.Count == 1, "read-only startup against mock");
+    Check(Mock.ClientName == "VPNProController", "honest standalone client identity");
+    Check(!Mock.Operations.Contains(Envelope.DetailsOneofCase.Connect) && !Mock.Operations.Contains(Envelope.DetailsOneofCase.Disconnect), "startup sends no mutation");
+    await Task.WhenAll(Service.RefreshAsync(), Service.RefreshAsync(), Service.RefreshAsync());
+    Check(Service.Snapshot.ServiceAvailable, "concurrent shell calls serialized");
+    var RegistrationsBefore = Mock.Operations.Count(Operation => Operation == Envelope.DetailsOneofCase.ClientConnect);
+    await Service.ReconnectAsync();
+    Check(Mock.Operations.Count(Operation => Operation == Envelope.DetailsOneofCase.ClientConnect) == RegistrationsBefore + 1, "recovery creates a new registration and event subscription");
+    var EventSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    Service.SnapshotChanged += State => { if (State.Status == VpnStatus.Connected) EventSeen.TrySetResult(); };
+    await Task.Delay(150);
+    Mock.EmitConnected = true;
+    await EventSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+    Check(true, "event subscription updates snapshot");
+    await Service.DisconnectAsync();
+    Check(Service.Snapshot.Status == VpnStatus.Disconnected, "explicit mock disconnect");
+    Mock.EmptyConnect = true;
+    await Service.ConnectAsync("75");
+    Check(Service.Snapshot.Status == VpnStatus.Disconnected && Service.Snapshot.Error is not null, "empty connect reply reports the observed stuck-service failure");
+    Mock.EmptyConnect = false;
+    await Service.ConnectAsync("75");
+    Check(Service.Snapshot.Status == VpnStatus.Connected, "explicit mock connect");
+    Mock.DropNext = true;
+    try { await Service.RefreshAsync(); throw new Exception("Expected timeout"); }
+    catch (TimeoutException) { Check(!Service.Snapshot.ServiceAvailable && Service.Snapshot.Status == VpnStatus.Unknown, "timeout marks stale status unknown"); }
+    var Recovered = await Service.RefreshAsync();
+    Check(Recovered.ServiceAvailable, "explicit refresh recovers REQ socket after timeout");
+    Mock.WrongNext = true;
+    try { await Service.RefreshAsync(); throw new Exception("Expected mismatched reply"); }
+    catch (InvalidDataException) { Check(true, "mismatched reply rejected"); }
+    await Service.RefreshAsync();
+    await Service.DisconnectAsync();
+    Mock.Valid = false;
+    var ConnectsBefore = Mock.Operations.Count(Operation => Operation == Envelope.DetailsOneofCase.Connect);
+    try { await Service.ConnectAsync("75"); throw new Exception("Expected invalid credentials rejection"); }
+    catch (InvalidOperationException) { Check(Mock.Operations.Count(Operation => Operation == Envelope.DetailsOneofCase.Connect) == ConnectsBefore, "invalid credentials prevent connect"); }
+    var MutationsBefore = Mock.Operations.Count(Operation => Operation is Envelope.DetailsOneofCase.Connect or Envelope.DetailsOneofCase.Disconnect);
+    await Service.DisposeAsync();
+    Check(Mock.Operations.Count(Operation => Operation is Envelope.DetailsOneofCase.Connect or Envelope.DetailsOneofCase.Disconnect) == MutationsBefore, "disposing shell sends no disconnect");
+}
+Console.WriteLine("[VPNPro:Test] All tests passed. Only random-port mock services were controlled.");
+return 0;
+
+sealed class MockService : IAsyncDisposable
+{
+    public readonly TaskCompletionSource<int> Port = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public readonly ConcurrentQueue<Envelope.DetailsOneofCase> Operations = new();
+    private readonly Task Worker;
+    private volatile bool Stop;
+    public volatile bool DropNext;
+    public volatile bool WrongNext;
+    public volatile bool EmitConnected;
+    public volatile bool EmptyConnect;
+    public volatile bool Valid = true;
+    public string? ClientName;
+    public MockService() => Worker = Task.Factory.StartNew(Run, TaskCreationOptions.LongRunning);
+    private void Run()
+    {
+        try
+        {
+            using var Events = new PublisherSocket();
+            Events.Options.Linger = TimeSpan.Zero;
+            var EventPort = Events.BindRandomPort("tcp://127.0.0.1");
+            using var Server = new ResponseSocket();
+            Server.Options.Linger = TimeSpan.Zero;
+            Port.TrySetResult(Server.BindRandomPort("tcp://127.0.0.1"));
+            var State = 0;
+            while (!Stop)
+            {
+                if (EmitConnected)
+                {
+                    EmitConnected = false; State = 2;
+                    Events.SendMoreFrame("vpnpro_event").SendFrame(new Envelope { Event = new() { ConnectionChanged = new() { Status = State } } }.ToByteArray());
+                }
+                if (!Server.TryReceiveFrameBytes(TimeSpan.FromMilliseconds(20), out var Bytes)) continue;
+                var Message = Envelope.Parser.ParseFrom(Bytes);
+                Operations.Enqueue(Message.DetailsCase);
+                if (DropNext) { DropNext = false; Thread.Sleep(850); }
+                Envelope Reply;
+                if (WrongNext) { WrongNext = false; Reply = new() { Disconnect = new() { Reply = new() } }; }
+                else switch (Message.DetailsCase)
+                {
+                    case Envelope.DetailsOneofCase.ClientConnect:
+                        ClientName = Message.ClientConnect.Request.ClientName;
+                        Reply = new() { ClientConnect = new() { Reply = new() { ClientId = 90, EventPort = EventPort, Version = 4 } } }; break;
+                    case Envelope.DetailsOneofCase.GetStoredCredentialsStatus:
+                        Reply = new() { GetStoredCredentialsStatus = new() { Reply = new() { Valid = Valid } } }; break;
+                    case Envelope.DetailsOneofCase.GetConnectionStatus:
+                        Reply = new() { GetConnectionStatus = new() { Reply = new() { Status = State } } }; break;
+                    case Envelope.DetailsOneofCase.GetLocations:
+                        Reply = new() { GetLocations = new() { Reply = new() } };
+                        Reply.GetLocations.Reply.Locations.Add(new Location { Id = "75", Name = "USA - New York", CountryCode = "US" }); break;
+                    case Envelope.DetailsOneofCase.GetLastUsedConnectionData:
+                        Reply = new() { GetLastUsedConnectionData = new() { Reply = new() { Data = new() { LocationId = "75", IpAddress = "192.0.2.1" } } } }; break;
+                    case Envelope.DetailsOneofCase.Connect:
+                        State = EmptyConnect ? 0 : 2; Reply = new() { Connect = new() { Reply = new() { IpAddress = EmptyConnect ? "" : "192.0.2.1" } } }; break;
+                    case Envelope.DetailsOneofCase.Disconnect:
+                        State = 0; Reply = new() { Disconnect = new() { Reply = new() } }; break;
+                    default: throw new Exception("Unexpected operation");
+                }
+                Server.SendFrame(Reply.ToByteArray());
+            }
+        }
+        catch (Exception Error) { Port.TrySetException(Error); throw; }
+    }
+    public async ValueTask DisposeAsync() { Stop = true; await Worker.WaitAsync(TimeSpan.FromSeconds(4)); }
+}

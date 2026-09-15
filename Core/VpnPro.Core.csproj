@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="NetMQ" Version="4.0.4.3" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.1" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0" PrivateAssets="All" />
+    <Protobuf Include="Protocol.proto" GrpcServices="None" />
+  </ItemGroup>
+</Project>

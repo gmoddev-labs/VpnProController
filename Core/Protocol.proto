@@ -1,0 +1,39 @@
+syntax = "proto3";
+option csharp_namespace = "VpnPro.Core.Wire";
+// Minimal independently reconstructed schema. No credential provisioning messages.
+message Empty {}
+message Envelope {
+  oneof Details {
+    ServiceError Error = 2;
+    ServiceEvent Event = 3;
+    Registration ClientConnect = 16;
+    Credentials GetStoredCredentialsStatus = 20;
+    Locations GetLocations = 21;
+    ConnectOperation Connect = 23;
+    DisconnectOperation Disconnect = 24;
+    StatusOperation GetConnectionStatus = 25;
+    LastConnection GetLastUsedConnectionData = 27;
+  }
+}
+message ServiceError { string Message = 1; int32 ErrorType = 2; int32 ErrorCode = 3; }
+message Registration {
+  oneof Body { RegistrationRequest Request = 1; RegistrationReply Reply = 2; }
+}
+message RegistrationRequest { string ClientName = 1; int32 ClientId = 2; int32 Version = 3; }
+message RegistrationReply { int32 EventPort = 1; int32 ClientId = 2; int32 Version = 3; }
+message Credentials { oneof Body { Empty Request = 1; CredentialsReply Reply = 2; } }
+message CredentialsReply { oneof Result { bool Missing = 1; bool Valid = 2; } }
+message Locations { oneof Body { Empty Request = 1; LocationsReply Reply = 2; } }
+message LocationsReply { repeated Location Locations = 1; }
+message Location { string Id = 1; string Name = 2; string CountryCode = 3; float Longitude = 4; float Latitude = 5; }
+message StatusOperation { oneof Body { Empty Request = 1; StatusReply Reply = 2; } }
+message StatusReply { int32 Status = 1; }
+message ConnectOperation { oneof Body { ConnectRequest Request = 1; ConnectReply Reply = 2; } }
+message ConnectRequest { string LocationId = 1; }
+message ConnectReply { string IpAddress = 1; }
+message DisconnectOperation { oneof Body { Empty Request = 1; Empty Reply = 2; } }
+message ServiceEvent { ConnectionChanged ConnectionChanged = 2; Empty ServiceStop = 7; }
+message ConnectionChanged { int32 Status = 1; int32 Source = 2; }
+message LastConnection { oneof Body { Empty Request = 1; LastConnectionReply Reply = 2; } }
+message LastConnectionReply { ConnectionData Data = 1; }
+message ConnectionData { string IpAddress = 1; string LocationId = 2; }

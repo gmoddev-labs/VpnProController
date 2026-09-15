@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+artifacts/
+.vs/
+App/
+dist/
+*.zip
+SHA256.txt
+*.pcapng
+*.log
