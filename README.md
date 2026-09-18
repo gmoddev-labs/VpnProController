@@ -8,7 +8,7 @@ Download the versioned x64 installer from [private releases](https://github.com/
 
 For development or the smaller shared-runtime build, run `Build.ps1` without `-Installer` and open `App/VpnPro.Windows.exe`. That build requires .NET 10 and Windows App Runtime 1.8. Keep all its files together. The controller does not install another service or run a web server.
 
-The app registers under **VPNProController**, reads current state, and subscribes to events. Connect and Disconnect happen only after an explicit button press. Choose a location while disconnected. Close the window to stop the controller; it does not send VPN Disconnect. Open Opera for sign-in, renewal or account problems. After an unavailable-service error, use Refresh to establish a fresh session.
+The app registers under **VPNProController**, reads current state, and subscribes to events. Connect and Disconnect happen only after an explicit button press. Choose a location while disconnected, or click **Find optimal location** to select the current Opera recommendation. This refreshes the catalog and selects the location for your next manual Connect; it never switches the VPN automatically. Opera does not return measured ping, so this is not a latency benchmark. Close the window to stop the controller; it does not send VPN Disconnect. Open Opera for sign-in, renewal or account problems. After an unavailable-service error, use Refresh to establish a fresh session.
 
 Errors are displayed in the app's nonmodal InfoBar. The app does not show MessageBox dialogs. Diagnostic logs rotate at roughly 1 MB under `%LOCALAPPDATA%/VpnProController/Controller.log`. The executable requests normal user privileges and suppresses Windows process fault dialogs once Main starts. Missing runtime/OS failures before Main are outside managed error handling.
 
@@ -48,16 +48,16 @@ Run `Build.ps1` from PowerShell. It runs the mock tests and publishes the WinUI 
 For a distributable installer, install Inno Setup 6.7+ and run:
 
 ```powershell
-./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.2.0
+./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.3.0
 ```
 
-Output: `dist/VpnProController-0.2.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version.
+Output: `dist/VpnProController-0.3.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version.
 
 ```powershell
 dotnet run --project Probe/VpnPro.Probe.csproj -c Release -- --read-only
 ```
 
-The probe performs registration, credential validity, status, locations and last-connection queries only. It does not connect/disconnect the VPN.
+The probe performs registration, credential validity, status, locations and last-connection queries only. Use `--recommendation` instead of `--read-only` to also query the recommended location. It does not connect/disconnect the VPN.
 
 ## Validation
 

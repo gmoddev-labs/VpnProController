@@ -16,6 +16,8 @@ internal sealed class MainWindow : Window
     private readonly ComboBox LocationPicker = new() { PlaceholderText = "Choose a location", HorizontalAlignment = HorizontalAlignment.Stretch, DisplayMemberPath = "Name" };
     private readonly Button ConnectButton = new() { Content = "Connect", HorizontalAlignment = HorizontalAlignment.Stretch, Height = 44, IsEnabled = false };
     private readonly Button RefreshButton = new() { Content = "Refresh", HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly Button OptimalButton = new() { Content = "Find optimal location", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly TextBlock OptimalText = new() { Text = "Uses Opera’s recommendation; no measured ping is returned.", FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
     private readonly Button RecoveryButton = new() { Content = "Force restart VPN Pro service", HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly InfoBar ErrorBar = new() { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Warning };
     private readonly ProgressRing Progress = new() { Width = 20, Height = 20, IsActive = true };
@@ -49,6 +51,8 @@ internal sealed class MainWindow : Window
         var Locations = new StackPanel { Spacing = 8 };
         Locations.Children.Add(new TextBlock { Text = "Location", FontWeight = FontWeights.SemiBold });
         Locations.Children.Add(LocationPicker);
+        Locations.Children.Add(OptimalButton);
+        Locations.Children.Add(OptimalText);
         Locations.Children.Add(new TextBlock { Text = "Disconnect before switching locations.", FontSize = 12, Opacity = 0.65 });
         Root.Children.Add(Locations);
         ConnectButton.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
@@ -88,6 +92,23 @@ internal sealed class MainWindow : Window
         Content = new ScrollViewer { Content = Root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         Service.SnapshotChanged += OnSnapshot;
+        OptimalButton.Click += async (_, _) => await Execute(async () =>
+        {
+            OptimalText.Text = "Asking Opera for its optimal location…";
+            try
+            {
+                var Recommended = await Service.GetRecommendedLocationAsync();
+                if (Closing) return;
+                Render(Service.Snapshot);
+                LocationPicker.SelectedItem = Service.Snapshot.Locations.First(Location => Location.Id == Recommended.Id);
+                OptimalText.Text = $"Opera recommends {Recommended.Name}. Selected for your next connection.";
+            }
+            catch
+            {
+                if (!Closing) OptimalText.Text = "No recommendation received. Your connection was not changed.";
+                throw;
+            }
+        });
         RefreshButton.Click += async (_, _) => await Execute(async () => { await Service.RefreshAsync(); });
         ConnectButton.Click += async (_, _) => await Execute(async () =>
         {
@@ -135,6 +156,7 @@ internal sealed class MainWindow : Window
             LocationPicker.SelectedItem = Snapshot.Locations.FirstOrDefault(Location => Location.Id == SelectedId) ?? Snapshot.Locations.FirstOrDefault();
         }
         LocationPicker.IsEnabled = !Busy && Snapshot.ServiceAvailable && Snapshot.Status == VpnStatus.Disconnected;
+        OptimalButton.IsEnabled = !Busy && Snapshot.ServiceAvailable && Snapshot.Status == VpnStatus.Disconnected;
         ConnectButton.Content = Snapshot.Status == VpnStatus.Connected ? "Disconnect" : Snapshot.Status == VpnStatus.Connecting ? "Connecting…" : Snapshot.Status == VpnStatus.Disconnecting ? "Disconnecting…" : "Connect";
         ConnectButton.IsEnabled = !Busy && Snapshot.ServiceAvailable && (Snapshot.Status == VpnStatus.Connected ||
             Snapshot.Status == VpnStatus.Disconnected && Snapshot.CredentialsValid && LocationPicker.SelectedItem is VpnLocation);

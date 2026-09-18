@@ -16,6 +16,7 @@ public interface IVpnService : IAsyncDisposable
     event Action<VpnSnapshot>? SnapshotChanged;
     Task<VpnSnapshot> RefreshAsync();
     Task<VpnSnapshot> ReconnectAsync();
+    Task<VpnLocation> GetRecommendedLocationAsync();
     Task ConnectAsync(string LocationId);
     Task DisconnectAsync();
 }

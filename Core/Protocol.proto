@@ -12,6 +12,7 @@ message Envelope {
     ConnectOperation Connect = 23;
     DisconnectOperation Disconnect = 24;
     StatusOperation GetConnectionStatus = 25;
+    Recommendation GetRecommendedLocation = 26;
     LastConnection GetLastUsedConnectionData = 27;
   }
 }
@@ -25,6 +26,8 @@ message Credentials { oneof Body { Empty Request = 1; CredentialsReply Reply = 2
 message CredentialsReply { oneof Result { bool Missing = 1; bool Valid = 2; } }
 message Locations { oneof Body { Empty Request = 1; LocationsReply Reply = 2; } }
 message LocationsReply { repeated Location Locations = 1; }
+message Recommendation { oneof Body { Empty Request = 1; RecommendationReply Reply = 2; } }
+message RecommendationReply { Location Location = 1; }
 message Location { string Id = 1; string Name = 2; string CountryCode = 3; float Longitude = 4; float Latitude = 5; }
 message StatusOperation { oneof Body { Empty Request = 1; StatusReply Reply = 2; } }
 message StatusReply { int32 Status = 1; }

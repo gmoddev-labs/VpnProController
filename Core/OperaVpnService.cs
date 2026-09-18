@@ -33,6 +33,22 @@ public sealed class OperaVpnService : IVpnService
     }
 
     public Task<VpnSnapshot> RefreshAsync() => Submit(() => { Refresh(); return Snapshot; });
+    public Task<VpnLocation> GetRecommendedLocationAsync() => Submit(() =>
+    {
+        Refresh();
+        var Location = Exchange(new Envelope { GetRecommendedLocation = new() { Request = new() } })
+            .GetRecommendedLocation?.Reply?.Location;
+        if (Location is null || string.IsNullOrWhiteSpace(Location.Id) || string.IsNullOrWhiteSpace(Location.Name))
+            throw new InvalidDataException("Opera VPN Pro did not return an optimal location. Try again later.");
+        // IDs can change independently of this client's cached inventory.
+        var Inventory = Exchange(new Envelope { GetLocations = new() { Request = new() } }).GetLocations?.Reply
+            ?? throw new InvalidDataException("Locations reply is missing.");
+        var Locations = Array.AsReadOnly(Inventory.Locations.Select(Item => new VpnLocation(Item.Id, Item.Name, Item.CountryCode)).ToArray());
+        var Recommended = Locations.FirstOrDefault(Item => Item.Id == Location.Id)
+            ?? throw new InvalidDataException("Opera's recommended location is no longer available. Try again.");
+        Publish(Snapshot with { Locations = Locations, Error = null });
+        return Recommended;
+    });
     public Task<VpnSnapshot> ReconnectAsync() => Submit(() =>
     {
         CloseSockets();

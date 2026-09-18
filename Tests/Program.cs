@@ -19,6 +19,9 @@ Check(Convert.ToHexString(new Envelope { Disconnect = new() { Request = new() } 
 Check(Envelope.Parser.ParseFrom(Convert.FromHexString("ca01021200")).GetConnectionStatus.Reply.Status == 0, "omitted enum means Disconnected");
 Check(Envelope.Parser.ParseFrom(Convert.FromHexString("1a0412020802")).Event.ConnectionChanged.Status == 2, "connected event decodes");
 Check(Envelope.Parser.ParseFrom(Convert.FromHexString("a2010412021001")).GetStoredCredentialsStatus.Reply.Valid, "captured credential validity");
+Check(Convert.ToHexString(new Envelope { GetRecommendedLocation = new() { Request = new() } }.ToByteArray()) == "D201020A00", "optimal location request matches Opera capture");
+var Recommendation = Envelope.Parser.ParseFrom(Convert.FromHexString("d2012912270a250a03353634121043616e616461202d20546f726f6e746f1a0243412596c39ec22dbe9f2e42"));
+Check(Recommendation.GetRecommendedLocation.Reply.Location.Id == "564" && Recommendation.GetRecommendedLocation.Reply.Location.Name == "Canada - Toronto", "captured optimal location reply decodes");
 var Last = Envelope.Parser.ParseFrom(Convert.FromHexString("da011312110a0f0a093139322e302e322e3112023735"));
 Check(Last.GetLastUsedConnectionData.Reply.Data.LocationId == "75", "captured Express last connection has direct Data, not Nord optional wrapper");
 
@@ -29,6 +32,14 @@ await using (var Service = new OperaVpnService(Port: await Mock.Port.Task, Timeo
     Check(Snapshot.ServiceAvailable && Snapshot.CredentialsValid && Snapshot.Locations.Count == 1, "read-only startup against mock");
     Check(Mock.ClientName == "VPNProController", "honest standalone client identity");
     Check(!Mock.Operations.Contains(Envelope.DetailsOneofCase.Connect) && !Mock.Operations.Contains(Envelope.DetailsOneofCase.Disconnect), "startup sends no mutation");
+    var Recommended = await Service.GetRecommendedLocationAsync();
+    Check(Recommended.Id == "564" && Service.Snapshot.Locations.Any(Location => Location.Id == "564"), "recommendation refreshes stale location IDs");
+    Check(!Mock.Operations.Contains(Envelope.DetailsOneofCase.Connect) && !Mock.Operations.Contains(Envelope.DetailsOneofCase.Disconnect), "finding optimal location sends no VPN mutation");
+    Mock.MissingRecommendation = true;
+    try { await Service.GetRecommendedLocationAsync(); throw new Exception("Expected missing recommendation rejection"); }
+    catch (InvalidDataException) { Check(true, "empty recommendation is rejected"); }
+    Mock.MissingRecommendation = false;
+    await Service.RefreshAsync();
     await Task.WhenAll(Service.RefreshAsync(), Service.RefreshAsync(), Service.RefreshAsync());
     Check(Service.Snapshot.ServiceAvailable, "concurrent shell calls serialized");
     var RegistrationsBefore = Mock.Operations.Count(Operation => Operation == Envelope.DetailsOneofCase.ClientConnect);
@@ -80,6 +91,8 @@ sealed class MockService : IAsyncDisposable
     public volatile bool EmitConnected;
     public volatile bool EmptyConnect;
     public volatile bool Valid = true;
+    public volatile bool MissingRecommendation;
+    private bool RecommendedRequested;
     public string? ClientName;
     public MockService() => Worker = Task.Factory.StartNew(Run, TaskCreationOptions.LongRunning);
     private void Run()
@@ -117,7 +130,14 @@ sealed class MockService : IAsyncDisposable
                         Reply = new() { GetConnectionStatus = new() { Reply = new() { Status = State } } }; break;
                     case Envelope.DetailsOneofCase.GetLocations:
                         Reply = new() { GetLocations = new() { Reply = new() } };
-                        Reply.GetLocations.Reply.Locations.Add(new Location { Id = "75", Name = "USA - New York", CountryCode = "US" }); break;
+                        Reply.GetLocations.Reply.Locations.Add(new Location { Id = "75", Name = "USA - New York", CountryCode = "US" });
+                        if (RecommendedRequested) Reply.GetLocations.Reply.Locations.Add(new Location { Id = "564", Name = "Canada - Toronto", CountryCode = "CA" });
+                        break;
+                    case Envelope.DetailsOneofCase.GetRecommendedLocation:
+                        RecommendedRequested = true;
+                        Reply = new() { GetRecommendedLocation = new() { Reply = new() } };
+                        if (!MissingRecommendation) Reply.GetRecommendedLocation.Reply.Location = new Location { Id = "564", Name = "Canada - Toronto", CountryCode = "CA" };
+                        break;
                     case Envelope.DetailsOneofCase.GetLastUsedConnectionData:
                         Reply = new() { GetLastUsedConnectionData = new() { Reply = new() { Data = new() { LocationId = "75", IpAddress = "192.0.2.1" } } } }; break;
                     case Envelope.DetailsOneofCase.Connect:
