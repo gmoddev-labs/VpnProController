@@ -12,7 +12,7 @@ internal static class Program
         using var Host = new Form();
         var Handle = Host.Handle;
         var Shows = 0;
-        using var Tray = new TrayIcon(Handle, () => Shows++, () => { });
+        using var Tray = new TrayIcon(Handle, () => Shows++, () => { }, () => { }, () => { });
         var Identifier = new IconIdentifier { Size = (uint)Marshal.SizeOf<IconIdentifier>(), Window = Handle, Id = 1 };
         Check(Shell_NotifyIconGetRect(ref Identifier, out _) == 0, "native tray registration");
         var Snapshot = new VpnSnapshot(true, true, VpnStatus.Disconnected, [], null, null, null);
@@ -28,6 +28,17 @@ internal static class Program
         Check(State(Tray) == "Error", "unavailable service");
         Tray.Update(Snapshot with { CredentialsValid = false });
         Check(State(Tray) == "Error", "invalid credentials while disconnected");
+        foreach (var (StateSnapshot, Busy, Enabled) in new[] {
+            (Snapshot, false, true), (Snapshot with { Status = VpnStatus.Connected }, false, true),
+            (Snapshot, true, false), (Snapshot with { Status = VpnStatus.Connecting }, false, false),
+            (Snapshot with { ServiceAvailable = false }, false, false), (Snapshot with { CredentialsValid = false }, false, false) })
+        {
+            Tray.Update(StateSnapshot, Busy, true);
+            var Menu = (nint)typeof(TrayIcon).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(Tray, null)!;
+            try { Check(((GetMenuState(Menu, 3, 0) & 3) == 0) == Enabled && ((GetMenuState(Menu, 4, 0) & 3) == 0) == Enabled,
+                $"tray command gating: {StateSnapshot.Status}, busy={Busy}, service={StateSnapshot.ServiceAvailable}, credentials={StateSnapshot.CredentialsValid}"); }
+            finally { DestroyMenu(Menu); }
+        }
         SendMessage(Handle, 0x8001, 0, 0x400);
         SendMessage(Handle, 0x8001, 0, 0x401);
         Check(Shows == 2, "mouse and keyboard activation callbacks");
@@ -54,6 +65,8 @@ internal static class Program
     [DllImport("shell32.dll")] private static extern int Shell_NotifyIconGetRect(ref IconIdentifier Identifier, out Rect Rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string Name);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint SendMessage(nint Window, uint Message, nuint WParam, nint LParam);
+    [DllImport("user32.dll")] private static extern uint GetMenuState(nint Menu, uint Id, uint Flags);
+    [DllImport("user32.dll")] private static extern bool DestroyMenu(nint Menu);
 }
 
 namespace VpnPro.Windows

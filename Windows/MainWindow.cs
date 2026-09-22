@@ -11,6 +11,7 @@ internal sealed class MainWindow : Window
 {
     private readonly IVpnService Service;
     private TrayIcon? Tray;
+    private readonly CancellationTokenSource Lifetime = new();
     private readonly TextBlock StatusText = new() { Text = "Checking service", FontSize = 34, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock DetailText = new() { Text = "Reading Opera VPN Pro…", TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
     private readonly TextBlock AccountText = new() { FontSize = 12, Opacity = 0.7 };
@@ -43,7 +44,13 @@ internal sealed class MainWindow : Window
                     if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter Presenter) Presenter.Restore();
                     Activate();
                 }),
-                () => DispatcherQueue.TryEnqueue(() => { if (!Closing) Close(); }));
+                () => DispatcherQueue.TryEnqueue(() => { if (!Closing) Close(); }),
+                () => DispatcherQueue.TryEnqueue(async () => await Execute(ToggleConnectionAsync)),
+                () => DispatcherQueue.TryEnqueue(async () => await Execute(async () =>
+                {
+                    var Recommended = await VpnCommands.ConnectOptimalAsync(Service, Lifetime.Token);
+                    if (!Closing) OptimalText.Text = $"Connection requested: {Recommended.Name}.";
+                })));
         }
         catch (Exception Error) { AppLog.Write($"[VPNPro:Tray] {Error.Message}"); }
         var Root = new StackPanel { Padding = new Thickness(28), Spacing = 22 };
@@ -124,15 +131,12 @@ internal sealed class MainWindow : Window
             }
         });
         RefreshButton.Click += async (_, _) => await Execute(async () => { await Service.RefreshAsync(); });
-        ConnectButton.Click += async (_, _) => await Execute(async () =>
-        {
-            if (Service.Snapshot.Status == VpnStatus.Connected) await Service.DisconnectAsync();
-            else if (LocationPicker.SelectedItem is VpnLocation Location) await Service.ConnectAsync(Location.Id);
-        });
+        ConnectButton.Click += async (_, _) => await Execute(ToggleConnectionAsync);
         LocationPicker.SelectionChanged += (_, _) => Render(Service.Snapshot);
         Closed += async (_, _) =>
         {
             Closing = true;
+            Lifetime.Cancel();
             Tray?.Dispose();
             Service.SnapshotChanged -= OnSnapshot;
             await Service.DisposeAsync();
@@ -141,6 +145,12 @@ internal sealed class MainWindow : Window
     }
 
     private void OnSnapshot(VpnSnapshot Snapshot) => DispatcherQueue.TryEnqueue(() => { if (!Closing) Render(Snapshot); });
+    private async Task ToggleConnectionAsync()
+    {
+        if (Service.Snapshot.Status == VpnStatus.Connected) await Service.DisconnectAsync();
+        else if (Service.Snapshot.Status == VpnStatus.Disconnected && LocationPicker.SelectedItem is VpnLocation Location)
+            await Service.ConnectAsync(Location.Id);
+    }
     private async Task Execute(Func<Task> Action)
     {
         if (Busy || Closing) return;
@@ -154,7 +164,6 @@ internal sealed class MainWindow : Window
     public void ShowError(string Message) { ErrorBar.Message = Message; ErrorBar.IsOpen = true; }
     private void Render(VpnSnapshot Snapshot)
     {
-        Tray?.Update(Snapshot);
         StatusText.Text = Snapshot.ServiceAvailable ? Snapshot.Status.ToString() : Busy ? "Checking service" : "Service unavailable";
         StatusText.FontSize = Snapshot.ServiceAvailable ? 34 : 27;
         Progress.IsActive = Busy || Snapshot.Status is VpnStatus.Connecting or VpnStatus.Disconnecting;
@@ -172,6 +181,7 @@ internal sealed class MainWindow : Window
             LocationPicker.SelectedItem = Snapshot.Locations.FirstOrDefault(Location => Location.Id == SelectedId) ?? Snapshot.Locations.FirstOrDefault();
         }
         LocationPicker.IsEnabled = !Busy && Snapshot.ServiceAvailable && Snapshot.Status == VpnStatus.Disconnected;
+        Tray?.Update(Snapshot, Busy, LocationPicker.SelectedItem is VpnLocation);
         OptimalButton.IsEnabled = !Busy && Snapshot.ServiceAvailable && Snapshot.Status == VpnStatus.Disconnected;
         ConnectButton.Content = Snapshot.Status == VpnStatus.Connected ? "Disconnect" : Snapshot.Status == VpnStatus.Connecting ? "Connecting…" : Snapshot.Status == VpnStatus.Disconnecting ? "Disconnecting…" : "Connect";
         ConnectButton.IsEnabled = !Busy && Snapshot.ServiceAvailable && (Snapshot.Status == VpnStatus.Connected ||

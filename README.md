@@ -4,7 +4,7 @@ A small WinUI 3 shell over an independent .NET controller for the legitimately i
 
 ## Run
 
-Download the versioned x64 installer from [private releases](https://github.com/gmoddev/VpnProController/releases), then run it. Installs for the current user under `%LOCALAPPDATA%/Programs/VpnProController`; includes Start-menu shortcuts and an uninstaller. The installer bundles .NET 10 and WinUI dependencies (approximately 103 MB download) so separate runtime installation is unnecessary. Opera VPN Pro itself must already be legitimately installed/provisioned.
+Download the versioned x64 installer from [private releases](https://github.com/gmoddev-labs/VpnProController/releases), then run it. Installs for the current user under `%LOCALAPPDATA%/Programs/VpnProController`; includes Start-menu shortcuts and an uninstaller. WinUI dependencies are bundled. Setup checks both registry views for a stable x64 Microsoft.NETCore.App 10.0 runtime; when missing, it downloads Microsoft's .NET 10.0.12 installer over HTTPS, verifies its pinned SHA-256 and runs it with administrator elevation and no automatic restart. Existing compatible runtimes skip the download. Internet access and UAC approval are needed only when installing the missing runtime. The shared runtime remains installed when the controller is uninstalled. Opera VPN Pro itself must already be legitimately installed/provisioned.
 
 For development or the smaller shared-runtime build, run `Build.ps1` without `-Installer` and open `App/VpnPro.Windows.exe`. That build requires .NET 10 and Windows App Runtime 1.8. Keep all its files together. The controller does not install another service or run a web server.
 
@@ -13,6 +13,8 @@ The app registers under **VPNProController**, reads current state, and subscribe
 Errors are displayed in the app's nonmodal InfoBar. The app does not show MessageBox dialogs. Diagnostic logs rotate at roughly 1 MB under `%LOCALAPPDATA%/VpnProController/Controller.log`. The executable requests normal user privileges and suppresses Windows process fault dialogs once Main starts. Missing runtime/OS failures before Main are outside managed error handling.
 
 ## Startup, recovery and updates
+
+The tray menu also offers **Connect/Disconnect** and **Connect/Switch to optimal region**. Connect uses the location selected in the window. Switching interrupts the current VPN, waits for disconnection, then queries Opera and requests the recommended location. These commands are disabled while busy or in a transitional state; errors remain in the controller window. The installer assigns an explicit icon to shortcuts and repairs an existing controller taskbar pin that still uses a cached executable icon.
 
 - The permanent app, window and installer icon is the red shield. The tray icon follows service state: gray disconnected, amber connecting/disconnecting, red connected, and the supplied information shield for errors, unavailable state or invalid credentials while disconnected. Hover for status; click or use the tray menu to show the window. **Exit controller** removes the tray icon and leaves the VPN running, as does closing the window. No balloon notifications are shown. Explorer controls whether the tray icon appears directly or in its overflow area.
 
@@ -50,10 +52,10 @@ Run `Build.ps1` from PowerShell. It runs the mock tests and publishes the WinUI 
 For a distributable installer, install Inno Setup 6.7+ and run:
 
 ```powershell
-./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.4.0
+./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.5.0
 ```
 
-Output: `dist/VpnProController-0.4.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version.
+Output: `dist/VpnProController-0.5.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version. Installer publish output is `dist/FrameworkApp`, separate from older self-contained outputs. When updating the pinned runtime download, verify Microsoft's release-metadata SHA-512 before recording the installer SHA-256.
 
 On a Windows desktop with Explorer running, `dotnet run --project TrayTests/VpnPro.TrayTests.csproj -c Release` validates native tray registration, state updates, activation callbacks, simulated Explorer restart and cleanup. It uses an invisible test window and never contacts the VPN. Icon assets are generated from the supplied PNG pack using `Windows/Assets/BuildIcons.ps1 -SourceDirectory <extracted-pack>`; the resulting ICO files are checked in.
 

@@ -10,6 +10,11 @@ internal sealed class TrayIcon : IDisposable
     private readonly nint Window;
     private readonly Action Show;
     private readonly Action Exit;
+    private readonly Action? ToggleConnection;
+    private readonly Action? SwitchOptimal;
+    private VpnSnapshot Snapshot = VpnSnapshot.Initial;
+    private bool Busy;
+    private bool HasLocation;
     private readonly SubclassProc Callback;
     private readonly Dictionary<string, nint> Icons = new();
     private readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
@@ -19,11 +24,13 @@ internal sealed class TrayIcon : IDisposable
     private string? CurrentState;
     private string? CurrentTip;
 
-    public TrayIcon(nint Window, Action Show, Action Exit)
+    public TrayIcon(nint Window, Action Show, Action Exit, Action? ToggleConnection = null, Action? SwitchOptimal = null)
     {
         this.Window = Window;
         this.Show = Show;
         this.Exit = Exit;
+        this.ToggleConnection = ToggleConnection;
+        this.SwitchOptimal = SwitchOptimal;
         Callback = HandleMessage;
         Data = new() { Size = (uint)Marshal.SizeOf<NotifyIconData>(), Window = Window, Id = 1,
             Flags = 1 | 2 | 4 | 0x80, CallbackMessage = CallbackMessage, Tip = "VPN Pro Controller",
@@ -43,9 +50,12 @@ internal sealed class TrayIcon : IDisposable
         catch { Dispose(); throw; }
     }
 
-    public void Update(VpnSnapshot Snapshot)
+    public void Update(VpnSnapshot Snapshot, bool Busy = false, bool HasLocation = false)
     {
         if (Disposed) return;
+        this.Snapshot = Snapshot;
+        this.Busy = Busy;
+        this.HasLocation = HasLocation;
         var Failed = !Snapshot.ServiceAvailable || Snapshot.Error is not null || Snapshot.Status == VpnStatus.Unknown
             || (!Snapshot.CredentialsValid && Snapshot.Status == VpnStatus.Disconnected);
         var State = Failed ? "Error" : Snapshot.Status switch
@@ -97,14 +107,35 @@ internal sealed class TrayIcon : IDisposable
         return DefSubclassProc(Handle, Message, WParam, LParam);
     }
 
-    private void ShowMenu(nuint Position)
+    private bool CanToggle => !Busy && Snapshot.ServiceAvailable && ToggleConnection is not null &&
+        (Snapshot.Status == VpnStatus.Connected || Snapshot.Status == VpnStatus.Disconnected && Snapshot.CredentialsValid && HasLocation);
+    private bool CanSwitch => !Busy && Snapshot.ServiceAvailable && Snapshot.CredentialsValid && SwitchOptimal is not null &&
+        Snapshot.Status is VpnStatus.Connected or VpnStatus.Disconnected;
+
+    private nint BuildMenu()
     {
         var Menu = CreatePopupMenu();
+        if (Menu == 0) return 0;
+        AppendMenu(Menu, 0, 1, "Show controller");
+        AppendMenu(Menu, CanToggle ? 0u : 1u, 3, Snapshot.Status switch
+        {
+            VpnStatus.Connected => "Disconnect",
+            VpnStatus.Connecting => "Connecting…",
+            VpnStatus.Disconnecting => "Disconnecting…",
+            _ => "Connect"
+        });
+        AppendMenu(Menu, CanSwitch ? 0u : 1u, 4, Snapshot.Status == VpnStatus.Connected ? "Switch to optimal region" : "Connect to optimal region");
+        AppendMenu(Menu, 0x800, 0, "");
+        AppendMenu(Menu, 0, 2, "Exit controller (leave VPN running)");
+        return Menu;
+    }
+
+    private void ShowMenu(nuint Position)
+    {
+        var Menu = BuildMenu();
         if (Menu == 0) return;
         try
         {
-            AppendMenu(Menu, 0, 1, "Show controller");
-            AppendMenu(Menu, 0, 2, "Exit controller (leave VPN running)");
             SetForegroundWindow(Window);
             var X = unchecked((short)((ulong)Position & 0xffff));
             var Y = unchecked((short)(((ulong)Position >> 16) & 0xffff));
@@ -112,6 +143,8 @@ internal sealed class TrayIcon : IDisposable
             PostMessage(Window, 0, 0, 0);
             if (Command == 1) Show();
             else if (Command == 2) Exit();
+            else if (Command == 3 && CanToggle) ToggleConnection?.Invoke();
+            else if (Command == 4 && CanSwitch) SwitchOptimal?.Invoke();
         }
         finally { DestroyMenu(Menu); }
     }

@@ -59,6 +59,26 @@ await using (var Service = new OperaVpnService(Port: await Mock.Port.Task, Timeo
     Mock.EmptyConnect = false;
     await Service.ConnectAsync("75");
     Check(Service.Snapshot.Status == VpnStatus.Connected, "explicit mock connect");
+    var BeforeSwitch = Mock.Operations.Count;
+    await VpnCommands.ConnectOptimalAsync(Service);
+    var SwitchOperations = Mock.Operations.Skip(BeforeSwitch).Where(Operation => Operation is Envelope.DetailsOneofCase.Disconnect or Envelope.DetailsOneofCase.GetRecommendedLocation or Envelope.DetailsOneofCase.Connect).ToArray();
+    Check(SwitchOperations.SequenceEqual(new[] { Envelope.DetailsOneofCase.Disconnect, Envelope.DetailsOneofCase.GetRecommendedLocation, Envelope.DetailsOneofCase.Connect }), "optimal switch disconnects then queries then connects exactly once");
+    Mock.Valid = false;
+    BeforeSwitch = Mock.Operations.Count;
+    try { await VpnCommands.ConnectOptimalAsync(Service); throw new Exception("Expected invalid credentials rejection"); }
+    catch (InvalidOperationException) { Check(!Mock.Operations.Skip(BeforeSwitch).Any(Operation => Operation is Envelope.DetailsOneofCase.Disconnect or Envelope.DetailsOneofCase.Connect), "invalid credentials do not interrupt current connection"); }
+    Mock.Valid = true;
+    BeforeSwitch = Mock.Operations.Count;
+    try { await VpnCommands.ConnectOptimalAsync(Service, new CancellationToken(true)); throw new Exception("Expected cancellation"); }
+    catch (OperationCanceledException) { Check(Mock.Operations.Count == BeforeSwitch, "cancelled optimal switch sends no commands"); }
+    Mock.MissingRecommendation = true;
+    BeforeSwitch = Mock.Operations.Count;
+    try { await VpnCommands.ConnectOptimalAsync(Service); throw new Exception("Expected missing recommendation rejection"); }
+    catch (InvalidDataException) { Check(!Mock.Operations.Skip(BeforeSwitch).Contains(Envelope.DetailsOneofCase.Connect), "failed recommendation never sends a guessed connect"); }
+    Mock.MissingRecommendation = false;
+    BeforeSwitch = Mock.Operations.Count;
+    await VpnCommands.ConnectOptimalAsync(Service);
+    Check(!Mock.Operations.Skip(BeforeSwitch).Contains(Envelope.DetailsOneofCase.Disconnect) && Service.Snapshot.Status == VpnStatus.Connected, "optimal connect while disconnected skips disconnect");
     Mock.DropNext = true;
     try { await Service.RefreshAsync(); throw new Exception("Expected timeout"); }
     catch (TimeoutException) { Check(!Service.Snapshot.ServiceAvailable && Service.Snapshot.Status == VpnStatus.Unknown, "timeout marks stale status unknown"); }

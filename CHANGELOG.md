@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- Stop bundling the .NET runtime. Setup detects an installed x64 .NET 10 runtime, otherwise downloads a hash-verified Microsoft installer and installs it with no automatic restart. WinUI dependencies remain bundled.
+
+- Give shortcuts an explicit shield icon and repair the existing controller taskbar pin on upgrade, avoiding stale executable icon caching.
+- Add Connect/Disconnect and Connect/Switch to optimal region to the tray menu. Commands are disabled during changes or when required service/credential state is unavailable.
+- Optimal switching waits for disconnection, queries the current recommendation, and sends one connect request. Closing the controller cancels the remaining switch steps.
+
 ## 0.4.0
 
 - Use the supplied red shield as the executable, installer and window icon.
