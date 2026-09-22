@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.5.0"
+  #define AppVersion "0.5.1"
 #endif
 #ifndef AppSource
   #define AppSource "..\dist\FrameworkApp"
@@ -39,6 +39,13 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
 Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Old self-contained hostfxr forces app-local framework lookup even with shared runtimeconfig.
+Type: files; Name: "{app}\hostfxr.dll"
+Type: files; Name: "{app}\hostpolicy.dll"
+Type: files; Name: "{app}\Recovery\hostfxr.dll"
+Type: files; Name: "{app}\Recovery\hostpolicy.dll"
 
 [Icons]
 Name: "{group}\VPN Pro Controller"; Filename: "{app}\VpnPro.Windows.exe"; IconFilename: "{app}\Assets\Connected.ico"

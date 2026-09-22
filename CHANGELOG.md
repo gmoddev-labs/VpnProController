@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Remove obsolete app-local runtime loaders when upgrading from bundled-runtime versions, so both the controller and recovery helper locate the installed shared .NET runtime.
+
 ## 0.5.0
 
 - Stop bundling the .NET runtime. Setup detects an installed x64 .NET 10 runtime, otherwise downloads a hash-verified Microsoft installer and installs it with no automatic restart. WinUI dependencies remain bundled.

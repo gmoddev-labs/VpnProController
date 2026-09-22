@@ -1,4 +1,4 @@
-param([switch]$Installer, [string]$IsccPath, [string]$Version = '0.5.0')
+param([switch]$Installer, [string]$IsccPath, [string]$Version = '0.5.1')
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = $PSScriptRoot
 & dotnet run --project (Join-Path $ProjectRoot 'Tests\VpnPro.Tests.csproj') -c Release -p:UseSharedCompilation=false

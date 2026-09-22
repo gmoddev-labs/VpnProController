@@ -52,10 +52,10 @@ Run `Build.ps1` from PowerShell. It runs the mock tests and publishes the WinUI 
 For a distributable installer, install Inno Setup 6.7+ and run:
 
 ```powershell
-./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.5.0
+./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.5.1
 ```
 
-Output: `dist/VpnProController-0.5.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version. Installer publish output is `dist/FrameworkApp`, separate from older self-contained outputs. When updating the pinned runtime download, verify Microsoft's release-metadata SHA-512 before recording the installer SHA-256.
+Output: `dist/VpnProController-0.5.1-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version. Installer publish output is `dist/FrameworkApp`, separate from older self-contained outputs. Upgrades remove obsolete private hostfxr/hostpolicy loaders in the app and Recovery directories so shared runtime lookup works. When updating the pinned runtime download, verify Microsoft's release-metadata SHA-512 before recording the installer SHA-256.
 
 On a Windows desktop with Explorer running, `dotnet run --project TrayTests/VpnPro.TrayTests.csproj -c Release` validates native tray registration, state updates, activation callbacks, simulated Explorer restart and cleanup. It uses an invisible test window and never contacts the VPN. Icon assets are generated from the supplied PNG pack using `Windows/Assets/BuildIcons.ps1 -SourceDirectory <extracted-pack>`; the resulting ICO files are checked in.
 
