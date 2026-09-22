@@ -10,6 +10,7 @@ namespace VpnPro.Windows;
 internal sealed class MainWindow : Window
 {
     private readonly IVpnService Service;
+    private TrayIcon? Tray;
     private readonly TextBlock StatusText = new() { Text = "Checking service", FontSize = 34, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock DetailText = new() { Text = "Reading Opera VPN Pro…", TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
     private readonly TextBlock AccountText = new() { FontSize = 12, Opacity = 0.7 };
@@ -32,6 +33,19 @@ internal sealed class MainWindow : Window
         Title = "VPN Pro Controller";
         AppWindow.Resize(new global::Windows.Graphics.SizeInt32(470, 760));
         SystemBackdrop = new MicaBackdrop();
+        try
+        {
+            AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Connected.ico"));
+            Tray = new TrayIcon(WinRT.Interop.WindowNative.GetWindowHandle(this),
+                () => DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (Closing) return;
+                    if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter Presenter) Presenter.Restore();
+                    Activate();
+                }),
+                () => DispatcherQueue.TryEnqueue(() => { if (!Closing) Close(); }));
+        }
+        catch (Exception Error) { AppLog.Write($"[VPNPro:Tray] {Error.Message}"); }
         var Root = new StackPanel { Padding = new Thickness(28), Spacing = 22 };
         var Heading = new StackPanel { Spacing = 5 };
         Heading.Children.Add(new TextBlock { Text = "VPN PRO", FontSize = 13, FontWeight = FontWeights.SemiBold, CharacterSpacing = 150 });
@@ -119,6 +133,7 @@ internal sealed class MainWindow : Window
         Closed += async (_, _) =>
         {
             Closing = true;
+            Tray?.Dispose();
             Service.SnapshotChanged -= OnSnapshot;
             await Service.DisposeAsync();
         };
@@ -139,6 +154,7 @@ internal sealed class MainWindow : Window
     public void ShowError(string Message) { ErrorBar.Message = Message; ErrorBar.IsOpen = true; }
     private void Render(VpnSnapshot Snapshot)
     {
+        Tray?.Update(Snapshot);
         StatusText.Text = Snapshot.ServiceAvailable ? Snapshot.Status.ToString() : Busy ? "Checking service" : "Service unavailable";
         StatusText.FontSize = Snapshot.ServiceAvailable ? 34 : 27;
         Progress.IsActive = Busy || Snapshot.Status is VpnStatus.Connecting or VpnStatus.Disconnecting;

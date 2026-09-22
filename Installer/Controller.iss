@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 #ifndef AppSource
   #define AppSource "..\dist\App"
@@ -26,6 +26,7 @@ SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\VpnPro.Windows.exe
+SetupIconFile=..\Windows\Assets\Connected.ico
 CloseApplications=yes
 CloseApplicationsFilter=VpnPro.Windows.exe,VpnPro.Recovery.exe
 RestartApplications=no

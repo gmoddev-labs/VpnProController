@@ -14,6 +14,8 @@ Errors are displayed in the app's nonmodal InfoBar. The app does not show Messag
 
 ## Startup, recovery and updates
 
+- The permanent app, window and installer icon is the red shield. The tray icon follows service state: gray disconnected, amber connecting/disconnecting, red connected, and the supplied information shield for errors, unavailable state or invalid credentials while disconnected. Hover for status; click or use the tray menu to show the window. **Exit controller** removes the tray icon and leaves the VPN running, as does closing the window. No balloon notifications are shown. Explorer controls whether the tray icon appears directly or in its overflow area.
+
 - Enable **Launch at Windows sign-in** in the UI or installer. It starts minimized; it never automatically connects the VPN. The toggle writes only this app's HKCU Run entry. Uninstall removes that entry.
 - Expand **Debug / recovery** and click **Force restart VPN Pro service** if both Opera and the controller cannot connect. Approve Windows UAC. The fixed-purpose helper stops only `VPNProService`, waits up to eight seconds, and force-stops its original process if necessary after verifying both the current service PID and the exact Opera service executable path. It then starts the service and the UI creates a new registration/event subscription. It interrupts an active VPN; it never kills Opera GX or arbitrary caller-supplied PIDs. Declined elevation/errors stay in the UI.
 - **Releases & updates** opens the private release page in your authenticated browser. Re-running a newer installer upgrades the same install identity and location. Versioned tags, release assets, SHA-256 checksums, and `update.json` provide the foundation for a future updater. There is **no background updater or automatic download/install yet**. Private assets require authenticated GitHub access; no token is embedded in the application.
@@ -48,10 +50,12 @@ Run `Build.ps1` from PowerShell. It runs the mock tests and publishes the WinUI 
 For a distributable installer, install Inno Setup 6.7+ and run:
 
 ```powershell
-./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.3.0
+./Build.ps1 -Installer -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -Version 0.4.0
 ```
 
-Output: `dist/VpnProController-0.3.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version.
+Output: `dist/VpnProController-0.4.0-Setup-x64.exe`, `dist/SHA256SUMS.txt`, and `dist/update.json`. Push a `vMAJOR.MINOR.PATCH` tag to trigger the pinned GitHub Actions workflow: tests, Windows build, installer, then private release. Manual workflow dispatch builds artifacts without publishing a release. Update the default version in Directory.Build.props/Build.ps1 with each release; the UI reads its actual assembly version.
+
+On a Windows desktop with Explorer running, `dotnet run --project TrayTests/VpnPro.TrayTests.csproj -c Release` validates native tray registration, state updates, activation callbacks, simulated Explorer restart and cleanup. It uses an invisible test window and never contacts the VPN. Icon assets are generated from the supplied PNG pack using `Windows/Assets/BuildIcons.ps1 -SourceDirectory <extracted-pack>`; the resulting ICO files are checked in.
 
 ```powershell
 dotnet run --project Probe/VpnPro.Probe.csproj -c Release -- --read-only
